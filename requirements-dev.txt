@@ -1,3 +1,5 @@
+sphinx
+sphinx-autobuild
 setuptools
 wheel
 twine
