@@ -11,6 +11,7 @@
 py-env
 .coverage
 .cache
+.vagrant
 htmlcov
 rethinkdb_data
 build
