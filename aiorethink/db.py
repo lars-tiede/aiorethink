@@ -92,6 +92,8 @@ class CursorAsyncMap:
     
     Example: Document.from_cursor(cursor) returns a CursorAsyncMap that maps
     each object from the cursor to Document.from_doc().
+
+    The ``as_list()`` coroutine creates a list out of the iterated items.
     """
     def __init__(self, cursor, mapper):
         """cursor is a RethinkDB cursor. mapper is a function accepting one
@@ -100,8 +102,10 @@ class CursorAsyncMap:
         self.cursor = cursor
         self.mapper = mapper
 
+
     async def __aiter__(self):
         return self
+
 
     async def __anext__(self):
         try:
@@ -110,3 +114,13 @@ class CursorAsyncMap:
             return mapped
         except r.ReqlCursorEmpty:
             raise StopAsyncIteration
+
+
+    async def as_list(self):
+        """Turns the asynchronous iterator into a list by doing the iteration
+        and collecting the resulting items into a list.
+        """
+        l = []
+        async for item in self:
+            l.append(item)
+        return l

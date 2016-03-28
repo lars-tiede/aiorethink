@@ -224,9 +224,7 @@ async def test_from_cursor(EmptyDoc):
         await EmptyDoc.create(v = v)
 
     c = await EmptyDoc.cq().run(cn)
-    ds = []
-    async for d in EmptyDoc.from_cursor(c):
-        ds.append(d)
+    ds = await EmptyDoc.from_cursor(c).as_list()
 
     assert len(ds) == 3
     vs = [ d["v"] for d in ds ]

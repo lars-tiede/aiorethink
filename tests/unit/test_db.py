@@ -200,3 +200,9 @@ async def test_cursor_async_map(db_conn, aiorethink_db_session):
         vs.append(v)
     vs.sort()
     assert vs == [1,2,3]
+
+
+    cursor = await r.table("test").run(cn)
+    vs = await CursorAsyncMap(cursor, mapper).as_list()
+    vs.sort()
+    assert vs == [1,2,3]
