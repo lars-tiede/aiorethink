@@ -230,3 +230,29 @@ async def test_from_cursor(EmptyDoc):
     vs = [ d["v"] for d in ds ]
     vs.sort()
     assert vs == [1,2,3]
+
+
+@pytest.mark.asyncio
+async def test_from_query(EmptyDoc):
+    cn = await db_conn
+    await EmptyDoc._create_table()
+
+    for v in [1,2,3]:
+        await EmptyDoc.create(v = v)
+
+    q = EmptyDoc.cq()
+    c = await EmptyDoc.from_query(q)
+    assert isinstance(c, aiorethink.db.CursorAsyncMap)
+
+    q = EmptyDoc.cq().nth(0)
+    d1 = await EmptyDoc.from_query(q)
+    assert isinstance(d1, EmptyDoc)
+    d2 = await EmptyDoc.from_query(q.run(cn))
+    assert isinstance(d2, EmptyDoc)
+    assert d1.pkey == d2.pkey
+
+    q = EmptyDoc.cq().get("does not exist")
+    assert await EmptyDoc.from_query(q) == None
+
+    with pytest.raises(TypeError):
+        await EmptyDoc.from_query(r)

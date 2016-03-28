@@ -1,4 +1,5 @@
 import functools
+import inspect
 
 import inflection
 import rethinkdb as r
@@ -243,10 +244,11 @@ class Document(Validatable, metaclass = _MetaDocument):
 
     @classmethod
     def from_cursor(cls, cursor):
-        """Returns an asynchronous iterator that iterates over all objects in
-        the RethinkDB cursor. Each object from the cursor is loaded into a Document
-        instance using ``cls.from_doc``, so make sure that the query you use to
-        make the cursor returns "complete" documents with all fields included.
+        """Returns an ``aiorethink.db.CursorAsyncMap`` object, i.e. an
+        asynchronous iterator that iterates over all objects in the RethinkDB
+        cursor. Each object from the cursor is loaded into a Document instance
+        using ``cls.from_doc``, so make sure that the query you use to make the
+        cursor returns "complete" documents with all fields included.
 
         Usage example::
 
@@ -260,18 +262,58 @@ class Document(Validatable, metaclass = _MetaDocument):
 
 
     @classmethod
+    async def from_query(cls, query, conn = None):
+        """Executes a ReQL query. The query may or may not already have called
+        run():
+        * if run() has been called, then the query (strictly speaking, the
+          awaitable) is just awaited. This gives the caller the opportunity to
+          customize the run() call.
+        * if run() has not been called, then the query is run on the given
+          connection (or the default connection). This is more convenient for
+          the caller than the former version.
+
+        If the query returns None, then the method returns None.
+
+        If the query returns an object, then the method loads a Document object
+        (of type ``cls``) from the result. (NB make sure that your query
+        returns the whole document, i.e. all its fields). The loaded Document
+        object is returned.
+
+        If the query returns a cursor, then the method calls
+        ``cls.from_cursor`` and returns its result (i.e. an
+        ``aiorethink.db.CursorAsyncMap`` object, an asynchronous iterator over
+        Document objects).
+        """
+        # run() query if caller hasn't already done so
+        if not inspect.isawaitable(query):
+            if not isinstance(query, r.RqlQuery):
+                raise TypeError("query is neither awaitable nor a RqlQuery")
+            cn = conn or await db_conn
+            query = query.run(cn)
+
+        # wait for query result
+        res = await query
+
+        if res == None:
+            return res
+        if isinstance(res, r.Cursor):
+            return cls.from_cursor(res)
+        if isinstance(res, dict):
+            return cls.from_doc(res, True)
+        raise AssertionError("Don't recognize query result. Bug!")
+
+
+    @classmethod
     async def load(cls, pkey_val, conn = None):
         """Loads an object from the database, using its primary key for
         identification.
         """
-        cn = conn or await db_conn
-        res = await cls.cq().\
-                get(pkey_val).\
-                run(cn)
+        obj = await cls.from_query(
+                cls.cq().get(pkey_val),
+                conn)
 
-        if res == None:
+        if obj == None:
             raise NotFoundError("no matching document")
-        obj = cls.from_doc(res, True)
         return obj
 
 
