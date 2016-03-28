@@ -3,7 +3,7 @@ import re
 from ..errors import ValidationError
 from .base import Field
 
-__all__ = [ "StringField" ]
+__all__ = [ "StringField", "IntField" ]
 
 
 class TypedField(Field):
