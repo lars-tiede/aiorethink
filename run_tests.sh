@@ -10,4 +10,4 @@ if [[ -n "$@" ]]; then
     arg="$@"
 fi
 
-py.test -x --cov=aiorethink --cov-report html --cov-report term-missing $@
+py.test -x --cov=aiorethink --cov-report html --cov-report term-missing $arg
