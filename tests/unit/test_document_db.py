@@ -213,3 +213,22 @@ async def test_load_doc(MyTestDocs):
 
         with pytest.raises(aiorethink.NotFoundError):
             l = await Doc.load("hello")
+
+
+@pytest.mark.asyncio
+async def test_from_cursor(EmptyDoc):
+    cn = await db_conn
+    await EmptyDoc._create_table()
+
+    for v in [1,2,3]:
+        await EmptyDoc.create(v = v)
+
+    c = await EmptyDoc.cq().run(cn)
+    ds = []
+    async for d in EmptyDoc.from_cursor(c):
+        ds.append(d)
+
+    assert len(ds) == 3
+    vs = [ d["v"] for d in ds ]
+    vs.sort()
+    assert vs == [1,2,3]

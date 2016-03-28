@@ -83,3 +83,30 @@ async def init_app_db(reconfigure_db = False, conn = None):
             await doc_class._create_table(cn)
         elif reconfigure_db:
             await doc_class._reconfigure_table(cn)
+
+
+
+class CursorAsyncMap:
+    """Async iterator that iterates through a RethinkDB cursor, mapping each
+    object coming out of the cursor to a supplied mapper function.
+    
+    Example: Document.from_cursor(cursor) returns a CursorAsyncMap that maps
+    each object from the cursor to Document.from_doc().
+    """
+    def __init__(self, cursor, mapper):
+        """cursor is a RethinkDB cursor. mapper is a function accepting one
+        parameter: whatever comes out of cursor.next().
+        """
+        self.cursor = cursor
+        self.mapper = mapper
+
+    async def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        try:
+            item = await self.cursor.next()
+            mapped = self.mapper(item)
+            return mapped
+        except r.ReqlCursorEmpty:
+            raise StopAsyncIteration

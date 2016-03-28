@@ -1,3 +1,5 @@
+import functools
+
 import inflection
 import rethinkdb as r
 
@@ -5,7 +7,7 @@ from . import ALL, DECLARED_ONLY, UNDECLARED_ONLY
 from .errors import IllegalSpecError, AlreadyExistsError, NotFoundError
 from .registry import registry
 from .validatable import Validatable
-from .db import db_conn
+from .db import db_conn, CursorAsyncMap
 from .fields import Field
 
 __all__ = [ "Document" ]
@@ -237,6 +239,24 @@ class Document(Validatable, metaclass = _MetaDocument):
         """RethinkDB query prefix for queries on the Document's DB table.
         """
         return r.table(cls._tablename)
+
+
+    @classmethod
+    def from_cursor(cls, cursor):
+        """Returns an asynchronous iterator that iterates over all objects in
+        the RethinkDB cursor. Each object from the cursor is loaded into a Document
+        instance using ``cls.from_doc``, so make sure that the query you use to
+        make the cursor returns "complete" documents with all fields included.
+
+        Usage example::
+
+            conn = await aiorethink.db_conn
+            all_docs_cursor = MyDocument.cq().run(conn)
+            async for doc in MyDocument.from_cursor(all_docs_cursor):
+                assert isinstance(doc, MyDocument) # holds
+        """
+        return CursorAsyncMap(cursor, functools.partial(
+            cls.from_doc, stored_in_db = True))
 
 
     @classmethod

@@ -180,3 +180,23 @@ async def test_init_db_create_and_reconfigure_tables(DocClasses,
     await aiorethink.init_app_db(reconfigure_db = True)
     indexes = await Doc3.cq().index_list().run(cn)
     assert len(indexes) == 1
+
+
+@pytest.mark.asyncio
+async def test_cursor_async_map(db_conn, aiorethink_db_session):
+    from aiorethink.db import CursorAsyncMap
+    cn = await db_conn
+
+    await r.table_create("test").run(cn)
+    for v in [1,2,3]:
+        await r.table("test").insert({"v": v}).run(cn)
+
+    cursor = await r.table("test").run(cn)
+    mapper = lambda d: d["v"]
+
+    vs = []
+    async for v in CursorAsyncMap(cursor, mapper):
+        assert type(v) == int
+        vs.append(v)
+    vs.sort()
+    assert vs == [1,2,3]
