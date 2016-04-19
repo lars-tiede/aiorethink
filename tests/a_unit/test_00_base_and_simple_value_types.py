@@ -38,18 +38,18 @@ def test_any_with_custom_validator():
 
 
 def test_any_with_stop_validation():
-    def validate_even(vt, val):
-        if val % 2 != 0:
+    def validate_odd(vt, val):
+        if val % 2 != 1:
             raise ar.ValidationError
         raise ar.StopValidation
 
-    def validate_4(vt, val):
-        if val % 4 != 0:
+    def validate_3(vt, val):
+        if val % 3 != 0:
             raise ar.ValidationError
 
-    vt = ar.AnyValueType(extra_validators = [validate_even, validate_4])
+    vt = ar.AnyValueType(extra_validators = [validate_odd, validate_3])
 
-    assert vt.validate(2) == vt
+    assert vt.validate(5) == vt
 
 
 ###############################################################################
