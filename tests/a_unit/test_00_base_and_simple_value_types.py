@@ -55,4 +55,39 @@ def test_any_with_stop_validation():
 ###############################################################################
 # simple TypedValueTypes
 ###############################################################################
-# TODO
+
+def test_int():
+    vt = ar.IntValueType()
+    assert vt.validate(0) == vt
+    with pytest.raises(ar.ValidationError):
+        vt.validate("abc")
+
+
+def test_string_simple():
+    vt = ar.StringValueType()
+    assert vt.validate("Hello") == vt
+    with pytest.raises(ar.ValidationError):
+        vt.validate(0)
+
+
+def test_string_maxlen():
+    vt = ar.StringValueType(max_length = 3)
+    assert vt.validate("Hel") == vt
+    with pytest.raises(ar.ValidationError):
+        vt.validate("Hello")
+
+
+def test_string_re():
+    vt = ar.StringValueType(regex = "^[a-z]+$")
+    assert vt.validate("abcde")
+    with pytest.raises(ar.ValidationError):
+        vt.validate("ABCDE")
+
+
+def test_string_re_and_maxlen():
+    vt = ar.StringValueType(max_length = 3, regex = "^[a-z]+$")
+    assert vt.validate("abc")
+    with pytest.raises(ar.ValidationError):
+        vt.validate("abcde")
+    with pytest.raises(ar.ValidationError):
+        vt.validate("ABC")
