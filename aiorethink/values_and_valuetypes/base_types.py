@@ -129,7 +129,9 @@ class AnyValueType:
         aiorethink calls it implicitly when necessary.
         """
         validators = self.__class__._find_methods_in_reverse_mro("_validate")
+
         if self._extra_validators != None:
+            validators = validators[:]
             validators.extend(self._extra_validators)
 
         for validator in validators:
