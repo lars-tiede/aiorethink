@@ -85,12 +85,12 @@ class AnyValueType:
         """
         # we have a cache for this. See if we get a hit for name
         cache = cls.__dict__.get("_find_methods_cache", None)
-        if cache != None:
+        if cache == None:
+            cls._find_methods_cache = cache = {}
+        else:
             methods = cache.get(name, None)
             if methods != None:
                 return methods
-        else:
-            cls._find_methods_cache = cache = {}
 
         # still here? then we need to do the work
         methods = []
