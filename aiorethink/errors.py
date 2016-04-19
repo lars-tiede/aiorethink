@@ -13,7 +13,7 @@ class IllegalSpecError(ValueError):
 class ValidationError(Exception):
     pass
 
-class IllegalValidatorError(Exception):
+class StopValidation(Exception):
     pass
 
 class NotLoadedError(Exception):

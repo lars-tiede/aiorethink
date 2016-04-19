@@ -10,5 +10,6 @@ UNDECLARED_ONLY = 2
 
 from .errors import *
 from .db import *
-from .fields import *
+from .values_and_valuetypes import *
+from .field import *
 from .document import *

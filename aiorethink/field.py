@@ -1,22 +1,36 @@
-from ..validatable import Validatable
-from ..errors import IllegalAccessError, IllegalSpecError, ValidationError
-
-__all__ = [ "Field" ]
+from .errors import IllegalAccessError, IllegalSpecError, ValidationError
+from .values_and_valuetypes import AnyValueType, LazyValueType
 
 
-class Field(Validatable):
-    def __init__(self, **kwargs):
-        """optional kwargs:
+__all__ = [ "Field", "FieldAlias" ]
+
+
+class Field:
+    """Field instances are attached to FieldContainer classes as class attributes.
+
+    Field implements __get__ and __set__ for attribute access on FieldContainer
+    instances. This way, Field instances store values in a FieldContainer
+    instance.
+
+    A Field instance has an associated ValueType instance, which takes care of
+    DB<->Python world value conversion and value validation.
+    """
+
+    def __init__(self, val_type = None, **kwargs):
+        """``val_type`` is a ``ValueType`` or None (in which case it's just
+        substituted with AnyValueType()).
+
+        Optional kwargs:
         name: name of the property in the DB. Defaults to property name in
             python.
         indexed: if True, a secondary index will be created for this property
         required: set to True if a non-None value is required.
         primary_key: use this property as primary key. If True, indexed must be
             False and required must be True.
-        extra_validators: iterable of callable that take two arguments (field,
-            value). Must return the validated value.
         default: default value (which defaults to None).
         """
+        self.val_type = val_type or AnyValueType()
+
         self._name = None
 
         # get field properties from kwargs
@@ -27,9 +41,6 @@ class Field(Validatable):
             if self._indexed:
                 raise IllegalSpecError("property can't be indexed *and* "
                     "primary_key")
-            #if not self._required:
-            #    raise IllegalSpecError("property can't be primary_key and not"
-            #        " required")
         self._dbname = kwargs.pop("name", None)
         ## if we get a default value, make sure it's valid
         self._default = kwargs.get("default", None) # NOTE get, not pop...
@@ -39,7 +50,7 @@ class Field(Validatable):
             del kwargs["default"]
 
         # now that we popped all our args off kwargs, we call parent's
-        # conctructor
+        # constructor
         super().__init__(**kwargs)
 
         # finally, validate the default value if we have to
@@ -97,22 +108,17 @@ class Field(Validatable):
     def __get__(self, obj, cls):
         if obj == None:
             return self # __get__ was called on class, not instance
-        return self._get_value(obj)
-
-    def _get_value(self, obj):
         return obj._declared_fields_values.get(self._name, self._default)
 
+
     def __set__(self, obj, val, mark_updated = True):
-        # NOTE referential integrity when we change primary key? hmmm...
-        self._set_value(obj, val)
+        self.validate(val)
+        obj._declared_fields_values[self._name] = val
         if mark_updated:
             obj.mark_field_updated(self._name)
 
-    def _set_value(self, obj, val):
-        obj._declared_fields_values[self._name] = val
 
     def __delete__(self, obj):
-        # NOTE referential integrity? hmmm...
         if self._name in obj._declared_fields_values:
             del obj._declared_fields_values[self._name]
             obj.mark_field_updated(self._name)
@@ -121,37 +127,75 @@ class Field(Validatable):
     ###########################################################################
     # conversions RethinkDB doc <-> Python object
     ###########################################################################
+    # TODO rename these methods
+    # TODO at least store from doc should probably be public, in order to
+    # use it in changefeeds...
 
     def _do_convert_to_doc(self, obj):
-        val = self._get_value(obj)
-        val = self.validate(val)
-        return self._convert_to_doc(obj, val)
-
-    def _convert_to_doc(self, obj, val):
-        """Converts property's value to a format suitable for storing into the
-        DB (i.e. something JSON serializable). Override in subclasses. The
-        default implementation just returns the property's value.
-        """
-        return val
+        val = self.__get__(obj, None)
+        self.validate(val) # TODO do we validate too often?
+        return self.val_type.pyval_to_dbval(val)
 
     def _store_from_doc(self, obj, dbval, mark_updated = False):
-        val = self._construct_from_doc(obj, dbval)
+        val = self.val_type.dbval_to_pyval(dbval)
         self.__set__(obj, val, mark_updated = mark_updated)
-
-    def _construct_from_doc(self, obj, val):
-        """Construct property's value from the value stored in a document.
-        Override this in subclasses. Returns the constructed object. The
-        default implementation returns val.
-        """
-        return val
 
 
     ###########################################################################
     # validation
     ###########################################################################
 
-    def _validate(self, val):
-        if self._required and val == None:
-            raise ValidationError("no value for required property {}"
-                    .format(self._name))
-        return val
+    def validate(self, val):
+        if val == None:
+            if self._required:
+                raise ValidationError("no value for required property {}"
+                        .format(self._name))
+            else:
+                return None
+        else:
+            return self.val_type.validate(val)
+
+
+
+class FieldAlias:
+    """Use it as an alias for another Field in the same FieldContainer class,
+    like so::
+
+        class Foo(aiorethink.Document):
+            f1 = aiorethink.Field(...)
+            f_alias = aiorethink.FieldAlias(f1)
+
+    aiorethink uses a FieldAlias for ``AnyDocument.pkey``, which is an alias
+    for whichever field of AnyDocument is AnyDocument's primary key.
+
+    A FieldAlias simply dispatches all attribute accesses to the target field.
+    """
+
+    def __init__(self, target):
+        super().__init__()
+        self._target_field = target
+
+    def __repr__(self):
+        s = "{self.__class__.__name__}(fld_name={self.name})"
+        return s.format(self = self)
+
+    __str__ = __repr__
+
+    def __getattr__(self, name):
+        return getattr(self._target_field, name)
+
+
+    ###########################################################################
+    # Descriptor protocol (because it's not dispatched by __getattr__)
+    ###########################################################################
+
+    def __get__(self, obj, cls):
+        if obj == None:
+            return self # __get__ was called on class, not instance
+        return self._target_field.__get__(obj, cls)
+
+    def __set__(self, obj, val, mark_updated = True):
+        return self._target_field.__set__(obj, val, mark_updated)
+
+    def __delete__(self, obj):
+        return self._target_field.__delete__(obj)

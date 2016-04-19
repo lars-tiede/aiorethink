@@ -1,3 +1,4 @@
+import collections
 import functools
 import inspect
 
@@ -7,43 +8,38 @@ import rethinkdb as r
 from . import ALL, DECLARED_ONLY, UNDECLARED_ONLY
 from .errors import IllegalSpecError, AlreadyExistsError, NotFoundError
 from .registry import registry
-from .validatable import Validatable
-from .db import db_conn, CursorAsyncMap
-from .fields import Field
+from .db import db_conn, CursorAsyncIterator, CursorAsyncMap, ChangesAsyncMap,\
+            _run_query
+from .field import Field, FieldAlias
+from .values_and_valuetypes.field_container import FieldContainer, _MetaFieldContainer
 
 __all__ = [ "Document" ]
 
 
-class _MetaDocument(type):
+class _MetaDocument(_MetaFieldContainer):
 
     def __init__(cls, name, bases, classdict):
-        parents = [b for b in bases if isinstance(b, _MetaDocument)]
-        if not parents:
-            super().__init__(name, bases, classdict)
-            return
+        cls._set_tablename()
+
+        # make sure that the following runs only for subclasses of Document.
+        # There's no really nice way to do this AFAIK, because 'Document' is
+        # not known yet when this is called. The best I could come up with is
+        # this:
+        if bases != (FieldContainer,):
+            registry.register(name, cls)
 
         super().__init__(name, bases, classdict)
 
-        if getattr(cls, "_tablename", None) == None:
-            cls._tablename = inflection.tableize(name)
-
-        cls._map_declared_fields()
-
-        registry.register(name, cls)
 
 
-class Document(Validatable, metaclass = _MetaDocument):
+class Document(FieldContainer, metaclass = _MetaDocument):
     """
     Non-obvious customization:
-    cls._tablename if you don't want the name of the DB table derived from the
-    class name.
     cls._table_create_options dict with extra kwargs for rethinkdb.table_create
     """
-    _tablename = None # set to sth in a subclass if name shuldn't be derived from class name
+    _tablename = None # customize with _set_tablename
     _table_create_options = None # dict with extra kwargs for rethinkdb.table_create
 
-    _declared_fields_objects = None # { attr name : Field instance }
-    _dbname_to_field_name = {} # { db name : field name }
     pkey = None # alias for whichever field is the primary key. set
                 # automatically for subclasses upon class creation
 
@@ -54,29 +50,11 @@ class Document(Validatable, metaclass = _MetaDocument):
         create and save in one step.
 
         Use kwargs to set fields.
-
-        Other optional kwargs:
-        extra_validators: iterable of callable that take two arguments
-            (document, document).  Think of the first argument as "self", and
-            the second the document to validate. Must return the validated
-            document.
         """
-        self._declared_fields_values = {} # { attr name : object }
-        self._updated_fields = {}
-        self._undeclared_fields = {}
+        super().__init__(**kwargs)
+
         self._stored_in_db = False # will be set to True if Doc is retrieved
                                    # from DB, and when saved to DB
-
-        # set fields given in kwargs
-        ## but first, salvage kwargs for parent class (yuck!)
-        kwargs_parent = {
-                "extra_validators": kwargs.pop("extra_validators", None)
-                }
-        ## ... and call parent constructor
-        super().__init__(**kwargs_parent)
-        ## Now make fields out of all remaining kwargs
-        for k, v in kwargs.items():
-            self[k] = v
 
 
     ###########################################################################
@@ -84,32 +62,36 @@ class Document(Validatable, metaclass = _MetaDocument):
     ###########################################################################
 
     @classmethod
-    def _map_declared_fields(cls):
-        """Construct our Fields from class attributes
-        """
-        # collect all declared fields in _declared_fields_objects
-        cls._declared_fields_objects = {}
-        for name in dir(cls):
-            attr = getattr(cls, name, None)
-            if isinstance(attr, Field) and name != "pkey":
-                if hasattr(Document, name):
-                    raise IllegalSpecError("Illegal field name {} (would "
-                    "overwrite attribute of same name defined in Document "
-                    "class).".format(name))
-                attr.name = name
-                cls._declared_fields_objects[attr.name] = attr
-                cls._dbname_to_field_name[attr.dbname] = attr.name
+    def _set_tablename(cls):
+        """Override this in subclasses if you want anything other than a table
+        name automatically derived from the class name using
+        inflection.tableize().
 
-        # make sure we have at most one declared primary key field
+        Mind the dangers of further subclassing, and of using the same table
+        for different Document classes.
+        """
+        cls._tablename = inflection.tableize(cls.__name__)
+
+
+    @classmethod
+    def _check_field_spec(cls):
+        # make sure that this runs only for subclasses of Document. There's no
+        # really nice way to do this AFAIK, because 'Document' is not known yet
+        # when this is called. The best I could come up with is this:
+        if cls.__bases__ == (FieldContainer,):
+            return
+
+        # make sure that we have at most one primary key field
         pk_name = None
         for fld_name, fld_obj in cls._declared_fields_objects.items():
             if fld_obj.primary_key:
                 if pk_name != None:
-                    raise IllegalSpecError("Document can't have more than 1 primary key")
+                    raise IllegalSpecError("Document can't have more than 1 "
+                        "primary key")
                 pk_name = fld_name
 
         # primary key: either we have an explicitly declared one, or we add a
-        # field named "id"
+        # primary key field named "id"
         if pk_name == None:
             if hasattr(cls, "id"):
                 raise IllegalSpecError("Need {}.id for RethinkDB's automatic "
@@ -118,9 +100,13 @@ class Document(Validatable, metaclass = _MetaDocument):
             cls.id.name = "id"
             cls._declared_fields_objects[cls.id.name] = cls.id
             cls._dbname_to_field_name[cls.id.dbname] = cls.id.name
-            cls.pkey = cls.id
-        else:
-            cls.pkey = getattr(cls, pk_name)
+            pk_name = cls.id.name
+
+        # add cls.pkey alias, pointing to the primary key field
+        if getattr(cls, "pkey", None) and not isinstance(cls.pkey, FieldAlias):
+            raise IllegalSpecError("'pkey' attribute is reserved for a "
+                    "FieldAlias to the primary key field.")
+        cls.pkey = FieldAlias(getattr(cls, pk_name))
 
 
     ###########################################################################
@@ -128,20 +114,8 @@ class Document(Validatable, metaclass = _MetaDocument):
     ###########################################################################
 
     def __repr__(self):
-        s = "{o.__class__}({o.__class__.pkey.name}={o.pkey})"
+        s = "{o.__class__.__name__}({o.__class__.pkey.name}={o.pkey})"
         return s.format(o = self)
-
-    def __str__(self):
-        return str(self._declared_fields_values)
-
-
-    def mark_field_updated(self, name):
-        self._updated_fields[name] = None
-
-
-    @classmethod
-    def has_field_attr(cls, fld_name):
-        return fld_name in cls._declared_fields_objects
 
 
     @property
@@ -243,64 +217,35 @@ class Document(Validatable, metaclass = _MetaDocument):
 
 
     @classmethod
-    def from_cursor(cls, cursor):
-        """Returns an ``aiorethink.db.CursorAsyncMap`` object, i.e. an
-        asynchronous iterator that iterates over all objects in the RethinkDB
-        cursor. Each object from the cursor is loaded into a Document instance
-        using ``cls.from_doc``, so make sure that the query you use to make the
-        cursor returns "complete" documents with all fields included.
+    async def aiter_table_changes(cls, changes_query = None, conn = None):
+        """Executes `changes_query` and returns an asynchronous iterator (a
+        ``ChangesAsyncMap``) that yields (document object, changefeed message)
+        tuples.
 
-        Usage example::
+        If `changes_query` is None, `cls.cq().changes(include_types = True)`
+        will be used, so the iterator will yield all new or changed documents
+        in cls's table, and changefeed messages will have a "type" attribute
+        giving you more information about what kind of change happened.
 
-            conn = await aiorethink.db_conn
-            all_docs_cursor = MyDocument.cq().run(conn)
-            async for doc in MyDocument.from_cursor(all_docs_cursor):
-                assert isinstance(doc, MyDocument) # holds
-        """
-        return CursorAsyncMap(cursor, functools.partial(
-            cls.from_doc, stored_in_db = True))
-
-
-    @classmethod
-    async def from_query(cls, query, conn = None):
-        """Executes a ReQL query. The query may or may not already have called
-        run():
+        If you sepcify `changes_query`, the query must return one complete
+        document in new_val on each message. So don't use pluck() or something
+        to that effect in your query.
+        
+        The query may or may not already have called run():
         * if run() has been called, then the query (strictly speaking, the
           awaitable) is just awaited. This gives the caller the opportunity to
           customize the run() call.
         * if run() has not been called, then the query is run on the given
           connection (or the default connection). This is more convenient for
           the caller than the former version.
-
-        If the query returns None, then the method returns None.
-
-        If the query returns an object, then the method loads a Document object
-        (of type ``cls``) from the result. (NB make sure that your query
-        returns the whole document, i.e. all its fields). The loaded Document
-        object is returned.
-
-        If the query returns a cursor, then the method calls
-        ``cls.from_cursor`` and returns its result (i.e. an
-        ``aiorethink.db.CursorAsyncMap`` object, an asynchronous iterator over
-        Document objects).
         """
-        # run() query if caller hasn't already done so
-        if not inspect.isawaitable(query):
-            if not isinstance(query, r.RqlQuery):
-                raise TypeError("query is neither awaitable nor a RqlQuery")
-            cn = conn or await db_conn
-            query = query.run(cn)
+        if changes_query == None:
+            changes_query = cls.cq().changes(include_types = True)
 
-        # wait for query result
-        res = await query
+        feed = await _run_query(changes_query)
+        mapper = functools.partial(cls.from_doc, stored_in_db = True) 
 
-        if res == None:
-            return res
-        if isinstance(res, r.Cursor):
-            return cls.from_cursor(res)
-        if isinstance(res, dict):
-            return cls.from_doc(res, True)
-        raise AssertionError("Don't recognize query result. Bug!")
+        return ChangesAsyncMap(feed, mapper)
 
 
     @classmethod
@@ -318,35 +263,10 @@ class Document(Validatable, metaclass = _MetaDocument):
 
 
     @classmethod
-    def from_doc(cls, doc, stored_in_db):
-        # instantiate Document object
-        obj = cls()
+    def from_doc(cls, doc, stored_in_db, **kwargs):
+        obj = super().from_doc(doc, **kwargs)
         obj._stored_in_db = stored_in_db
-
-        # construct field values from document and store them in Document
-        # object
-        for dbkey, dbval in doc.items():
-            fld_name = cls._dbname_to_field_name.get(dbkey, None)
-            if fld_name != None:
-                # make declared field
-                fld_obj = cls._declared_fields_objects[fld_name]
-                fld_val = fld_obj._construct_from_doc(obj, dbval)
-                getattr(cls, fld_name).__set__(obj, fld_val, mark_updated = False)
-            else:
-                # make undeclared field
-                obj._undeclared_fields[dbkey] = dbval
-
         return obj
-
-
-    def to_doc(self):
-        """Returns suited-for-DB representation of the document.
-        """
-        d = {}
-        for k in self.keys(DECLARED_ONLY):
-            d[getattr(self.__class__, k).dbname] = self.get_dbvalue(k)
-        d.update(self._undeclared_fields)
-        return d
 
 
     @classmethod
@@ -385,7 +305,7 @@ class Document(Validatable, metaclass = _MetaDocument):
         for fld_name in self._updated_fields.keys():
             if self.__class__.has_field_attr(fld_name):
                 # Field instance: convert field value to DB-serializable format
-                fld_obj = self.__class__._declared_fields_objects[fld_name]
+                fld_obj = getattr(self.__class__, fld_name)
                 db_key = fld_obj.dbname
                 db_val = fld_obj._do_convert_to_doc(self)
                 update_dict[db_key] = db_val
@@ -397,6 +317,7 @@ class Document(Validatable, metaclass = _MetaDocument):
                 # _undeclared_fields (see __delitem__). But since we can not
                 # remove fields from a RethinkDB document, we have to overwrite
                 # 'deleted' fields with something (here: None)...
+                # TODO: make replace() query then
 
         # update in DB
         self._updated_fields = {}
@@ -413,7 +334,7 @@ class Document(Validatable, metaclass = _MetaDocument):
         insert_dict = {}
         for fld_name, fld_obj in self.__class__._declared_fields_objects.items():
             # don't store if primary key and not set (then DB should autogenerate)
-            if fld_obj.primary_key and self[fld_name] == None:
+            if fld_obj.primary_key and self.get(fld_name, None) == None:
                 continue
             # convert field value to DB-serializable format
             db_key = fld_obj.dbname
@@ -437,191 +358,10 @@ class Document(Validatable, metaclass = _MetaDocument):
 
 
     async def delete(self, conn = None, **kwargs_delete):
-        # NOTE referential integrity? hmm...
         cn = conn or await db_conn
         res = await self.q().delete(**kwargs_delete).run(cn)
         self._stored_in_db = False
         return res
-
-
-    ###########################################################################
-    # dict-like interface with access to both undeclared and declared fields,
-    # by their "python world" names and their "DB world" names.
-    ###########################################################################
-
-    def __getitem__(self, fld_name):
-        if fld_name == "pkey":
-            fld_name = self.__class__.pkey.name
-
-        if self.__class__.has_field_attr(fld_name):
-            return getattr(self, fld_name)
-        else:
-            return self._undeclared_fields[fld_name]
-
-
-    def get(self, fld_name, default = None):
-        if fld_name == "pkey":
-            fld_name = self.__class__.pkey.name
-
-        if fld_name in self:
-            return self[fld_name]
-        else:
-            return default
-
-
-    def get_dbvalue(self, fld_name, default = None):
-        """Returns suitable-for-DB representation (something JSON serilizable)
-        of the given field. If the field is a declared field, some conversion
-        might be involved, depending on the field type. If the field exists but
-        is undeclared, the field's value is returned without any conversion,
-        even if that is not json serializable. If the field does not exist,
-        default is returned.
-        """
-        if fld_name == "pkey":
-            fld_name = self.__class__.pkey.name
-
-        if self.has_field_attr(fld_name):
-            return self.__class__._declared_fields_objects[fld_name].\
-                    _do_convert_to_doc(self)
-        elif fld_name in self._undeclared_fields:
-            return self._undeclared_fields[fld_name]
-        else:
-            return default
-
-
-    def get_key_for_dbkey(self, dbkey, default = None):
-        return self._dbname_to_field_name.get(dbkey, default)
-        
-
-    def __setitem__(self, fld_name, value):
-        if fld_name == "pkey":
-            fld_name = self.__class__.pkey.name
-
-        if self.__class__.has_field_attr(fld_name):
-            setattr(self, fld_name, value)
-        else:
-            if fld_name not in self._undeclared_fields and \
-                    fld_name in self.dbkeys():
-                raise AlreadyExistsError("can't create an undeclared "
-                        "field named {} because a declared field uses "
-                        "this name for its database representation.")
-            self._undeclared_fields[fld_name] = value
-            self.mark_field_updated(fld_name)
-
-
-    def set_dbvalue(self, fld_name, dbvalue):
-        """Sets a field's 'DB representation' value. If fld_name is not a
-        declared field, this is the same as the 'python world' value, and
-        set_dbvalue does the same as __setitem__. If fld_name is a declared
-        field, the field's 'python world' value is constructed from dbvalue
-        according to the field type's implementation - as if the field is
-        loaded from the database.
-        """
-        if fld_name == "pkey":
-            fld_name = self.__class__.pkey.name
-
-        if self.has_field_attr(fld_name):
-            self.__class__._declared_fields_objects[fld_name].\
-                    _store_from_doc(self, dbvalue, mark_updated = True)
-        else:
-            self[fld_name] = dbvalue
-
-
-    def __delitem__(self, fld_name):
-        if fld_name == "pkey":
-            fld_name = self.__class__.pkey.name
-
-        if self.__class__.has_field_attr(fld_name):
-            delattr(self, fld_name)
-        else:
-            del self._undeclared_fields[fld_name]
-            self.mark_field_updated(fld_name)
-
-
-    def __contains__(self, fld_name):
-        if self.__class__.has_field_attr(fld_name):
-            return True
-        else:
-            return fld_name in self._undeclared_fields
-
-
-    def keys(self, which = ALL):
-        """Returns a set of field names.
-        """
-        keys = set()
-        if which != UNDECLARED_ONLY:
-            keys.update(self.__class__._declared_fields_objects.keys())
-        if which != DECLARED_ONLY:
-            keys.update(self._undeclared_fields.keys())
-        return keys
-
-
-    def dbkeys(self, which = ALL):
-        """Returns a set of database field names.
-        """
-        keys = set()
-        if which != UNDECLARED_ONLY:
-            for k in self.__class__._declared_fields_objects.keys():
-                keys.add(getattr(self.__class__, k).dbname)
-        if which != DECLARED_ONLY:
-            keys.update(self._undeclared_fields.keys())
-        return keys
-
-
-    def __iter__(self):
-        return self.keys().__iter__()
-
-
-    def __len__(self):
-        return self.len(ALL)
-
-
-    def len(self, which = ALL):
-        return len(self.keys(which))
-
-
-    def values(self, which = ALL):
-        """Returns a list of values.
-        """
-        return [ self[k] for k in self.keys(which) ]
-
-
-    def dbvalues(self, which = ALL):
-        """Returns a list of suited-for-DB representations of values.
-        """
-        return [ self.get_dbvalue(k) for k in self.keys(which) ]
-
-
-    def items(self, which = ALL):
-        d = { k: self[k] for k in self.keys(which) }
-        return d.items()
-
-
-    def dbitems(self, which = ALL):
-        return self.to_doc().items()
-
-
-    def clear(self, which = ALL):
-        """Deletes all fields.
-        """
-        for fld_name in self.keys(which):
-            del self[fld_name]
-
-
-    def update(self, d = None, **kwargs):
-        """Mimics dict.update(). d should be either None, a dict-like object
-        with a .keys() method, or an iterable of (key, value) tuples. Any
-        present kwargs are also used to set fields.
-        """
-        if d != None:
-            if callable(getattr(d, "keys", None)):
-                for k in d:
-                    self[k] = d[k]
-            else:
-                for k, v in d: # might raise TypeError
-                    self[k] = v
-        for k in kwargs:
-            self[k] = kwargs[k]
 
 
     def copy(self, which = ALL):
@@ -629,57 +369,52 @@ class Document(Validatable, metaclass = _MetaDocument):
         fields except for the primary key field, which remains unset. The new
         Document is returned.
         """
-        # figure out what to copy (everything but primary key and read-only fields)
-        keys_to_copy = self.keys(which)
-        if which != UNDECLARED_ONLY:
-            # remove primary key
-            keys_to_copy.remove(self.__class__.pkey.name)
-
-        # create new document and copy data
-        doc = self.__class__()
-        for k in keys_to_copy:
-            doc[k] = self[k]
-
+        doc = super().copy(which)
+        del doc[self.__class__.pkey.name]
         return doc
 
 
     ###########################################################################
-    # validation
+    # Point changefeeds (changefeeds on a single document object)
     ###########################################################################
+        
+    class ChangesAsyncIterator(collections.abc.AsyncIterator):
+        def __init__(self, doc, conn = None):
+            self.doc = doc
+            self.conn = conn
 
-    def validate(self):
-        """Explicitly validate the document. This happens automatically when
-        the Document is saved.
+
+        async def __aiter__(self):
+            query = self.doc.q().changes(include_initial = True,
+                    include_types = True)
+            self.cursor = await _run_query(query, self.conn)
+            return self
+
+
+        async def __anext__(self):
+            try:
+                msg = await self.cursor.next()
+            except r.ReqlCursorEmpty:
+                raise StopAsyncIteration
+
+            doc = self.doc
+
+            # update doc
+            if msg["new_val"] == None:
+                doc._stored_in_db = False
+            else:
+                changed_fields = {k: v for k, v in msg["new_val"].items()
+                        if k not in doc or v != doc.get_dbvalue(k)}
+                for k, v in changed_fields.items():
+                    doc_key = doc.get_key_for_dbkey(k)
+                    doc.set_dbvalue(doc_key, v, mark_updated = False)
+
+            return doc, list(changed_fields.keys()), msg
+
+
+    async def aiter_changes(self, conn = None):
+        """Note: be careful what you wish for. The document object is updated
+        in place when you iterate. Unsaved changes to it might then be
+        overwritten.
         """
-        # Just a shortcut to allow calling validate() without the extra val
-        # argument that we don't need when validating Documents.
-        return super().validate(self)
-
-
-    def validate_field(self, fld_name):
-        """Explicitly validate the field with the given name. This happens
-        automatically for all updated fields when the Document is saved.
-
-        The function returns the validated value. The value stored in the
-        document is also updated with the validated value (your validation
-        is allowed to make subtle changes to it).
-        """
-        fld_obj = self.__class__._declared_fields_objects.get(fld_name)
-        if fld_obj == None:
-            raise ValueError("{} is not a validatable field".
-                    format(fld_name))
-
-        val = self._declared_fields_values.get(fld_name, fld_obj.default)
-        validated_val = fld_obj.validate(val)
-        if fld_name in self._declared_fields_values:
-            self._declared_fields_values[fld_name] = validated_val
-        return validated_val
-
-
-    def _validate(self):
-        """Validates all updated fields individually.
-        """
-        for fld_name in self._updated_fields.keys():
-            if self.__class__.has_field_attr(fld_name):
-                self.validate_field(fld_name)
-        return self
+        return self.__class__.ChangesAsyncIterator(self, conn)
