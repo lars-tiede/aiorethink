@@ -26,6 +26,8 @@ class ElementContainerValueType(TypedValueType):
     def __init__(self, elem_type = None, **kwargs):
         super().__init__(**kwargs)
         self._elem_type = elem_type or AnyValueType()
+        if not isinstance(self._elem_type, AnyValueType):
+            raise TypeError("elem_type must be a ValueType")
 
 
     def _validate(self, val):
@@ -41,6 +43,8 @@ class ElementContainerValueType(TypedValueType):
 
 
     def pyval_to_dbval(self, pyval):
+        if pyval == None:
+            return None
         return [ self._elem_type.pyval_to_dbval(v) for v in pyval ]
 
 
@@ -89,7 +93,7 @@ class DictValueType(TypedValueType):
 
 
     def pyval_to_dbval(self, pyval):
-        if dbval == None:
+        if pyval == None:
             return None
         return { self._key_type.pyval_to_dbval(k): self._val_type.pyval_to_dbval(v)
                 for k, v in pyval.items() }
@@ -111,6 +115,8 @@ class NamedTupleValueType(TypedValueType):
         `collections.namedtuple()`. `item_value_types`, if specified, must be a
         list of value types, one for each item in the named tuple.
         """
+        super().__init__(**kwargs)
+
         # tuple_type and item_value_types must have same length
         if item_value_types != None and \
                 len(item_value_types) != len(tuple_type._fields):
@@ -128,8 +134,12 @@ class NamedTupleValueType(TypedValueType):
 
 
     def dbval_to_pyval(self, dbval):
+        if dbval == None:
+            return None
         return self._val_instance_of(**dbval)
 
 
     def pyval_to_dbval(self, pyval):
-        return pyval.as_dict()
+        if pyval == None:
+            return None
+        return pyval._asdict()
