@@ -1,5 +1,5 @@
 from ..errors import NotLoadedError
-from .base_types import TypedValueType
+from .base_types import TypedValueType, AnyValueType
 
 
 __all__ = ["LazyValue", "LazyValueType"]
@@ -37,9 +37,9 @@ class LazyValue:
     Write usage
     -----------
 
-    `doc.my_field.set(val)` when the field exists or generally `doc.my_field =
-    aiorethink.lval(val)`. Both do the same thing, so you can always use the
-    second form.
+    `doc.my_field.set(val)` when the field value exists (this won't work when
+    it's None) or generally `doc.my_field = aiorethink.lval(val)`. Both do the
+    same thing. It is recommended to use the second form as that always works.
 
     Validation and DB<->Python conversion
     -------------------------------------
@@ -52,13 +52,13 @@ class LazyValue:
     -----------
 
     The methods _load() and _convert_to_db() must be implemented, and
-    _val_type overridden.
+    _val_type can be overridden (it defaults to AnyValueType).
 
     ``_val_type`` is the instance of ValueType describing what type
     the lazy-loaded value has.
     """
 
-    _val_type = type(None)
+    _val_type = AnyValueType()
 
 
     def __init__(self,
@@ -67,6 +67,8 @@ class LazyValue:
         self._val_cached = val_cached
         self._val_db = val_db
         self._loaded = (val_cached != None)
+        if self._loaded:
+            self.set(self._val_cached) # validation and conversion to DB
 
 
     def __repr__(self):
@@ -122,8 +124,10 @@ class LazyValue:
 
 
     def set(self, new_val):
+        self.validate(new_val)
         self._val_cached = new_val
         self._loaded = True
+        self._val_db = self._convert_to_db(self._val_cached)
         return self
 
 
@@ -136,15 +140,11 @@ class LazyValue:
 
 
     def get_dbval(self):
-        self.validate()
-        if self._loaded:
-            self._val_db = self._convert_to_db(self._val_cached)
         return self._val_db
 
 
-    def validate(self):
-        if self._loaded:
-            self.__class__._val_type.validate(self._val_cached)
+    def validate(self, new_val):
+        self.__class__._val_type.validate(new_val)
         return self
 
 
@@ -156,6 +156,8 @@ class LazyValueType(TypedValueType):
     """
     _val_instance_of = LazyValue
 
+    # TODO maybe we can remove create_value, it's only used here and in
+    # LazyDocRefValueType
     def create_value(self, val_cached = None, val_db = None):
         return self.__class__._val_instance_of(val_db = val_db,
                 val_cached = val_cached)
@@ -167,4 +169,4 @@ class LazyValueType(TypedValueType):
         return pyval.get_dbval()
 
     def _validate(self, val):
-        val.validate()
+        val.validate(val._val_cached)
