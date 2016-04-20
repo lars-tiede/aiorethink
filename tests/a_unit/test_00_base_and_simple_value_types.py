@@ -52,6 +52,15 @@ def test_any_with_stop_validation():
     assert vt.validate(5) == vt
 
 
+def test_any_forbid_none():
+    vt1 = ar.AnyValueType(forbid_none = False)
+    vt2 = ar.AnyValueType(forbid_none = True)
+
+    assert vt1.validate(None) == vt1
+    with pytest.raises(ar.ValidationError):
+        vt2.validate(None)
+
+
 ###############################################################################
 # simple TypedValueTypes
 ###############################################################################
@@ -59,6 +68,7 @@ def test_any_with_stop_validation():
 def test_int():
     vt = ar.IntValueType()
     assert vt.validate(0) == vt
+    assert vt.validate(None) == vt
     with pytest.raises(ar.ValidationError):
         vt.validate("abc")
 
@@ -66,6 +76,7 @@ def test_int():
 def test_string_simple():
     vt = ar.StringValueType()
     assert vt.validate("Hello") == vt
+    assert vt.validate(None) == vt
     with pytest.raises(ar.ValidationError):
         vt.validate(0)
 
@@ -73,6 +84,7 @@ def test_string_simple():
 def test_string_maxlen():
     vt = ar.StringValueType(max_length = 3)
     assert vt.validate("Hel") == vt
+    assert vt.validate(None) == vt
     with pytest.raises(ar.ValidationError):
         vt.validate("Hello")
 
@@ -82,6 +94,8 @@ def test_string_re():
     assert vt.validate("abcde")
     with pytest.raises(ar.ValidationError):
         vt.validate("ABCDE")
+    with pytest.raises(ar.ValidationError):
+        vt.validate(None)
 
 
 def test_string_re_and_maxlen():
@@ -91,3 +105,5 @@ def test_string_re_and_maxlen():
         vt.validate("abcde")
     with pytest.raises(ar.ValidationError):
         vt.validate("ABC")
+    with pytest.raises(ar.ValidationError):
+        vt.validate(None)

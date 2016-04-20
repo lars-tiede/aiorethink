@@ -70,12 +70,15 @@ class AnyValueType:
     ``dbval_to_pyval``.
     """
 
-    def __init__(self, extra_validators = None):
+    def __init__(self, extra_validators = None, forbid_none = False):
         """Optional kwargs:
         * extra_validators: iterable of extra validators tacked onto the
             object. See ``ValueType`` class doc for more on this.
+        * forbid_none: set to True if the value None should always fail
+            validation. The default is False.
         """
         self._extra_validators = extra_validators
+        self._forbid_none = forbid_none
 
 
     @classmethod
@@ -116,7 +119,8 @@ class AnyValueType:
         If you need the validation cascade to stop after this validator, raise
         StopValidation.
         """
-        return val
+        if val == None and self._forbid_none:
+            raise ValidationError("None is not an allowed value.")
 
 
     def validate(self, val = None):
@@ -170,6 +174,6 @@ class TypedValueType(AnyValueType):
 
     def _validate(self, val):
         oktype = self._val_instance_of
-        if not isinstance(val, oktype):
+        if val != None and not isinstance(val, oktype):
             raise ValidationError("value {} is not an instance of {}, but "
                 "{}".format(repr(val), str(oktype), str(val.__class__)))

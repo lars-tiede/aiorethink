@@ -22,9 +22,9 @@ class StringValueType(TypedValueType):
         super().__init__(**kwargs)
 
     def _validate(self, val):
-        if self._max_length and len(val) > self._max_length:
+        if val != None and self._max_length and len(val) > self._max_length:
             raise ValidationError("string is too long ({} chars)"
                     .format(len(val)))
 
-        if self._regex and not self._regex.search(val):
+        if self._regex and not self._regex.search(val or ""):
             raise ValidationError("string does not match validation regex")
