@@ -3,7 +3,7 @@ import asyncio
 import pytest
 import rethinkdb as r
 
-import aiorethink
+import aiorethink as ar
 
 
 @pytest.mark.asyncio
@@ -20,8 +20,8 @@ async def test_simple_db_conn(db_conn):
 
 @pytest.mark.asyncio
 async def test_cant_reconfigure_db_connection(db_conn):
-    with pytest.raises(aiorethink.AlreadyExistsError):
-        aiorethink.configure_db_connection(db = "foo")
+    with pytest.raises(ar.AlreadyExistsError):
+        ar.configure_db_connection(db = "foo")
 
 
 @pytest.mark.asyncio
@@ -117,16 +117,16 @@ async def test_multithreading(db_conn, capsys):
 
 @pytest.fixture
 def DocClasses(db_conn):
-    class Doc1(aiorethink.Document):
+    class Doc1(ar.Document):
         pass
 
-    class Doc2(aiorethink.Document):
+    class Doc2(ar.Document):
         @classmethod
         async def _create_table_extras(cls, conn = None):
             cn = conn or await db_conn
             await cls.cq().index_create('some_field').run(cn)
 
-    class Doc3(aiorethink.Document):
+    class Doc3(ar.Document):
         @classmethod
         async def _reconfigure_table(cls, conn = None):
             cn = conn or await db_conn
@@ -143,7 +143,7 @@ async def test_init_db_create_db(db_conn):
     dbs = await r.db_list().run(cn)
 
     assert "testing" not in dbs
-    await aiorethink.init_app_db()
+    await ar.init_app_db()
     dbs = await r.db_list().run(cn)
     assert "testing" in dbs
 
@@ -155,7 +155,7 @@ async def test_init_db_create_and_reconfigure_tables(DocClasses,
         db_conn, aiorethink_db_session):
     cn = await db_conn
 
-    await aiorethink.init_app_db()
+    await ar.init_app_db()
 
     tables = await r.table_list().run(cn)
     assert len(tables) == len(DocClasses)
@@ -173,13 +173,28 @@ async def test_init_db_create_and_reconfigure_tables(DocClasses,
     indexes = await Doc3.cq().index_list().run(cn)
     assert len(indexes) == 0
 
-    await aiorethink.init_app_db()
+    await ar.init_app_db()
     indexes = await Doc3.cq().index_list().run(cn)
     assert len(indexes) == 0
 
-    await aiorethink.init_app_db(reconfigure_db = True)
+    await ar.init_app_db(reconfigure_db = True)
     indexes = await Doc3.cq().index_list().run(cn)
     assert len(indexes) == 1
+
+
+@pytest.mark.asyncio
+async def test_run_query(db_conn, aiorethink_db_session):
+    cn = await db_conn
+
+    q1 = r.db_list()
+    q2 = r.db_list().run(cn)
+
+    for q in [q1, q2]:
+        res = await ar.db._run_query(q)
+        assert "testing" in res
+
+    with pytest.raises(TypeError):
+        await ar.db._run_query("Hello")
 
 
 @pytest.mark.asyncio
