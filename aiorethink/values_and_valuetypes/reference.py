@@ -25,10 +25,9 @@ class LazyDocRef(LazyValue):
         _val_instance_of = Document
 
         def _validate(self, val):
-            if not val.stored_in_db:
+            if val != None and not val.stored_in_db:
                 raise ValidationError("referenced document is not "
                         "stored in the database")
-            return val
 
     _val_type = ReferencedDocumentValueType()
 
