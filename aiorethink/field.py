@@ -146,14 +146,12 @@ class Field:
     ###########################################################################
 
     def validate(self, val):
-        if val == None:
-            if self._required:
-                raise ValidationError("no value for required property {}"
-                        .format(self._name))
-            else:
-                return None
+        if val == None and self._required:
+            raise ValidationError("no value for required property {}"
+                    .format(self._name))
         else:
-            return self.val_type.validate(val)
+            self.val_type.validate(val)
+            return self
 
 
 
