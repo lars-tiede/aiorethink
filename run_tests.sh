@@ -10,4 +10,12 @@ if [[ -n "$@" ]]; then
     arg="$@"
 fi
 
-py.test -s -x --cov=aiorethink --cov-report html --cov-report term --durations=10 --ignore=tests/a_unit/test_db.py --ignore=tests/a_unit/test_document.py --ignore=tests/a_unit/test_document_db.py --ignore=tests/a_unit/test_fields_base.py --ignore=tests/a_unit/test_fields_simple.py --ignore=tests/a_unit/test_fields_lazy.py --ignore=tests/a_unit/test_registry.py --ignore=tests/a_unit/test_validatable.py $arg
+py.test -s -x --cov=aiorethink --cov-report html --cov-report term --durations=10 \
+   --ignore=tests/a_unit/test_document.py \
+   --ignore=tests/a_unit/test_document_db.py \
+   --ignore=tests/a_unit/test_fields_base.py \
+   --ignore=tests/a_unit/test_fields_simple.py \
+   --ignore=tests/a_unit/test_fields_lazy.py \
+   --ignore=tests/a_unit/test_registry.py \
+   --ignore=tests/a_unit/test_validatable.py \
+   $arg
