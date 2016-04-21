@@ -440,7 +440,7 @@ class FieldContainer(collections.abc.MutableMapping,
         """Explicitly validate the field container. aiorethink does this
         automatically when necessary (for example when an Document is saved).
 
-        Validates all updated fields individually.
+        The default implementation validates all updated fields individually.
 
         When you override this, don't forget to call super().validate().
         """
