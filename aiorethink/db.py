@@ -123,10 +123,12 @@ async def _run_query(query, conn = None):
 
 async def aiter_changes(query, value_type, conn = None):
     """Runs any changes() query, and from its result stream constructs "Python
-    world" objects as determined by value_type.
+    world" objects as determined by value_type (which may equal None when
+    data is deleted from the DB).
 
     The function returns an asynchronous iterator (a ``ChangesAsyncMap``),
     which yields `(constructed python object, changefeed message)` tuples.
+    Note that `constructed python object` might well be None.
 
     The `query` might or might not already have called `run()`, but it should
     not have been awaited on yet (check ``_run_query`` for details).
@@ -198,10 +200,11 @@ class ChangesAsyncMap(CursorAsyncIterator):
     """Async iterator that iterates over a RethinkDB changefeed, mapping each
     new_val coming in to a supplied mapper function (that typically makes some
     Python object out of it). On each iteration, a tuple (mapped object,
-    changefeed message) is yielded.
+    changefeed message) is yielded. Note that the mapped object might well be
+    None, for instance when documents are deleted from the DB.
     
-    Changefeed messages that do not contain a `new_val` (deletion and status
-    messages) are ignored.
+    Changefeed messages that do not contain a `new_val` (status messages) are
+    ignored.
 
     Example: ``Document.aiter_changes()`` returns a ChangesAsyncMap that maps
     each new_val (i.e., changed and inserted documents) to Document.from_doc().

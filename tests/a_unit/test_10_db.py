@@ -221,3 +221,42 @@ async def test_cursor_async_map(db_conn, aiorethink_db_session):
     vs = await CursorAsyncMap(cursor, mapper).as_list()
     vs.sort()
     assert vs == [1,2,3]
+
+
+@pytest.mark.asyncio
+async def test_aiter_changes(event_loop, db_conn, aiorethink_db_session):
+    cn = await db_conn
+
+    await r.table_create("test").run(cn)
+
+    async def track_table_changes(num_changes, vt):
+        i = 0
+        q = r.table("test").pluck("v").changes(include_states = True, include_initial = True)
+        values = []
+        async for obj, msg in await ar.aiter_changes(q, vt):
+            i += 1
+            assert obj == None or isinstance(list(obj.values())[0], set)
+            if obj != None:
+                values.append(list(obj.values())[0])
+            assert "new_val" in msg
+            if i >= num_changes:
+                break
+        return values
+
+    table_tracker = event_loop.create_task(track_table_changes(3,
+        ar.DictValueType(ar.StringValueType(), ar.SetValueType(ar.IntValueType()))
+        ))
+
+    await asyncio.sleep(0.5) # make reasonably sure that table_tracker is listening
+    await r.table("test").insert({"id": 1, "v": [1,2,3]}).run(cn)
+    await r.table("test").insert({"v": [4,5]}).run(cn)
+    await r.table("test").get(1).delete().run(cn)
+    await r.table("test").insert({"v": [6]}).run(cn)
+    await r.table("test").insert({"v": [7]}).run(cn)
+
+    done, pending = await asyncio.wait([table_tracker], timeout=5.0)
+    assert table_tracker in done
+    if table_tracker.exception() != None:
+        table_tracker.print_stack()
+    assert table_tracker.exception() == None
+    assert table_tracker.result() == [{1,2,3}, {4,5}]
