@@ -8,9 +8,9 @@ __all__ = [ "Field", "FieldAlias" ]
 class Field:
     """Field instances are attached to FieldContainer classes as class attributes.
 
-    Field implements __get__ and __set__ for attribute access on FieldContainer
-    instances. This way, Field instances store values in a FieldContainer
-    instance.
+    Field is a data descriptor, i.e. it implements __get__ and __set__ for
+    attribute access on FieldContainer instances. This way, Field instances
+    store values in a FieldContainer instance.
 
     A Field instance has an associated ValueType instance, which takes care of
     DB<->Python world value conversion and value validation.
@@ -49,11 +49,7 @@ class Field:
             validate_default_now = True
             del kwargs["default"]
 
-        # now that we popped all our args off kwargs, we call parent's
-        # constructor
-        super().__init__(**kwargs)
-
-        # finally, validate the default value if we have to
+        # validate the default value if we have to
         if validate_default_now:
             try:
                 self.validate(self._default)
@@ -102,7 +98,7 @@ class Field:
 
 
     ###########################################################################
-    # value access
+    # value access (data descriptor protocol ++)
     ###########################################################################
 
     def __get__(self, obj, cls):
