@@ -126,10 +126,9 @@ class FieldContainer(collections.abc.MutableMapping,
     # simple properties and due diligence
     ###########################################################################
 
-    # TODO make new repr
-    #def __repr__(self):
-    #    s = "{o.__class__.__name__}({o.__class__.pkey.name}={o.pkey})"
-    #    return s.format(o = self)
+    def __repr__(self):
+        s = "{o.__class__.__name__}({str_rep})"
+        return s.format(o = self, str_rep = str(self))
 
     def __str__(self):
         return str(collections.ChainMap(self._declared_fields_values,
@@ -273,8 +272,8 @@ class FieldContainer(collections.abc.MutableMapping,
             return default
 
 
-    def get_key_for_dbkey(self, dbkey, default = None):
-        return self._dbname_to_field_name.get(dbkey, default)
+    def get_key_for_dbkey(self, dbkey):
+        return self._dbname_to_field_name.get(dbkey, dbkey)
         
 
     def __setitem__(self, fld_name, value):
@@ -416,7 +415,7 @@ class FieldContainer(collections.abc.MutableMapping,
     def clear(self, which = ALL):
         """Deletes all fields.
         """
-        for fld_name in self.keys(which):
+        for fld_name in list(self.keys(which)):
             del self[fld_name]
 
 
@@ -443,6 +442,8 @@ class FieldContainer(collections.abc.MutableMapping,
         The default implementation validates all updated fields individually.
 
         When you override this, don't forget to call super().validate().
+
+        The method returns self.
         """
         for fld_name in self._updated_fields.keys():
             if self.__class__.has_field_attr(fld_name):
@@ -456,20 +457,22 @@ class FieldContainer(collections.abc.MutableMapping,
         this are fields where aiorethink can not know when updates happen, for
         example when you change an element within a list.
 
-        The function returns the validated value.
+        The method returns self.
         """
-        fld_obj = getattr(self.__class__, fld_name)
+        fld_obj = getattr(self.__class__, fld_name, None)
         if fld_obj == None:
             raise ValueError("{} is not a validatable field".
                     format(fld_name))
 
         val = self.get(fld_name, fld_obj.default)
-        validated_val = fld_obj.validate(val)
-        return validated_val
+        fld_obj.validate(val)
+        return self
 
 
 
 class FieldContainerValueType(TypedValueType):
+    """Subclassing: just override _val_instance_of and you should be fine.
+    """
     _val_instance_of = FieldContainer
 
     def dbval_to_pyval(self, dbval):
