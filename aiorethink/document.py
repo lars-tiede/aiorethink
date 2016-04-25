@@ -19,7 +19,7 @@ __all__ = [ "Document" ]
 class _MetaDocument(_MetaFieldContainer):
 
     def __init__(cls, name, bases, classdict):
-        cls._set_tablename()
+        cls._tablename = cls._get_tablename()
 
         # make sure that the following runs only for subclasses of Document.
         # There's no really nice way to do this AFAIK, because 'Document' is
@@ -37,11 +37,8 @@ class Document(FieldContainer, metaclass = _MetaDocument):
     Non-obvious customization:
     cls._table_create_options dict with extra kwargs for rethinkdb.table_create
     """
-    _tablename = None # customize with _set_tablename
+    _tablename = None # customize with _get_tablename - don't set this attr
     _table_create_options = None # dict with extra kwargs for rethinkdb.table_create
-
-    pkey = None # alias for whichever field is the primary key. set
-                # automatically for subclasses upon class creation
 
 
     def __init__(self, **kwargs):
@@ -62,7 +59,7 @@ class Document(FieldContainer, metaclass = _MetaDocument):
     ###########################################################################
 
     @classmethod
-    def _set_tablename(cls):
+    def _get_tablename(cls):
         """Override this in subclasses if you want anything other than a table
         name automatically derived from the class name using
         inflection.tableize().
@@ -70,7 +67,7 @@ class Document(FieldContainer, metaclass = _MetaDocument):
         Mind the dangers of further subclassing, and of using the same table
         for different Document classes.
         """
-        cls._tablename = inflection.tableize(cls.__name__)
+        return inflection.tableize(cls.__name__)
 
 
     @classmethod
@@ -392,24 +389,33 @@ class Document(FieldContainer, metaclass = _MetaDocument):
 
 
         async def __anext__(self):
-            try:
-                msg = await self.cursor.next()
-            except r.ReqlCursorEmpty:
-                raise StopAsyncIteration
+            while True:
+                try:
+                    msg = await self.cursor.next()
+                except r.ReqlCursorEmpty:
+                    raise StopAsyncIteration
 
-            doc = self.doc
+                if "new_val" not in msg:
+                    continue
 
-            # update doc
-            if msg["new_val"] == None:
-                doc._stored_in_db = False
-            else:
-                changed_fields = {k: v for k, v in msg["new_val"].items()
-                        if k not in doc or v != doc.get_dbvalue(k)}
-                for k, v in changed_fields.items():
-                    doc_key = doc.get_key_for_dbkey(k)
-                    doc.set_dbvalue(doc_key, v, mark_updated = False)
+                doc = self.doc
 
-            return doc, list(changed_fields.keys()), msg
+                # update doc and return changed fields
+                if msg["new_val"] == None:
+                    doc._stored_in_db = False
+                    return doc, None, msg
+                else:
+                    changed_fields = {k: v for k, v in msg["new_val"].items()
+                            if k not in doc or v != doc.get_dbvalue(k)}
+
+                    if not changed_fields:
+                        continue
+
+                    for k, v in changed_fields.items():
+                        doc_key = doc.get_key_for_dbkey(k)
+                        doc.set_dbvalue(doc_key, v, mark_updated = False)
+
+                    return doc, list(changed_fields.keys()), msg
 
 
     async def aiter_changes(self, conn = None):
