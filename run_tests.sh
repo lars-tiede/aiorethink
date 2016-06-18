@@ -10,7 +10,7 @@ if [[ -n "$@" ]]; then
     arg="$@"
 fi
 
-py.test -s -x --cov=aiorethink --cov-report html --cov-report term --durations=10 \
+python3 -m pytest -s -x --cov=aiorethink --cov-report html --cov-report term --durations=10 \
    --ignore=tests/a_unit/test_document.py \
    --ignore=tests/a_unit/test_document_db.py \
    --ignore=tests/a_unit/test_fields_base.py \
