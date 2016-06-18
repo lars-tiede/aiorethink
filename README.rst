@@ -38,15 +38,15 @@ Simple example
 
 That's all you need to start out with your own documents.
 
-Obviously, you need a RethinkDB instance running, and you need a database and
-the tables for your Document classes. aiorethink can't help you with the
-former, but the latter can be achieved like so (assuming a RethinkDB runs on
-localhost)::
+Obviously, you need a RethinkDB instance running, and you need a database
+including the tables for your Document classes. aiorethink can't help you with
+the RethinkDB instance, but the DB setup can be done like so (assuming a
+RethinkDB instance runs on localhost)::
 
     aiorethink.configure_db_connection(db = "my_db")
     await aiorethink.init_app_db()
 
-Let's make a Document::
+Let's make a document::
 
     spiderman = Hero(name = "Spiderma")
 
@@ -59,8 +59,51 @@ Let's make a Document::
 
     await spiderman.save()
 
-    # if we don't declare a primary key field, RethinkDB makes an 'id' field
-    print(spiderman.id)
+    # if we don't declare a primary key field, RethinkDB makes us an 'id' field
+    doc_id = spiderman.id
+
+Load a document from the DB::
+
+    spidey = Hero.load(doc_id) # using primary key
+
+    spidey = Hero.from_query(  # using arbitrary query
+        Hero.cq(). # "class query prefix", basically rethinkdb.table("Heros")
+            get_all("Spiderman", index = "name").nth(0)
+    )
+
+Iterate over a document's RethinkDB changefeed::
+
+    async for spidey, changed_keys, change_msg in await spidey.aiter_changes():
+        if "name" in changed_keys:
+            print("what, a typo again? {}?".format(spidey.name))
+
+        # change_msg is straight from the rethinkdb changes() query
+
+
+Features
+--------
+
+The following features are either fully or partially implemented:
+
+* optional schema: declare fields in Document classes and get serialization and
+  validation magic much like you know it from other ODMs / ORMs. Or don't
+  declare fields and "just use them" using the dictionary interface. Or use a
+  mix of declared and undeclared fields.
+* schema for complex fields such as lists, dicts, or even "sub-documents" with
+  named and typed fields just like documents.
+* ``dict`` interface that works for both declared and undeclared fields.
+* all I/O is is asynchronous, done with ``async def`` / ``await`` style
+  coroutines, using asyncio.
+* lazy-loading and caching (i.e. "awaitable" fields), for example references
+  to other documents.
+* asynchronous changefeeds using ``async for``, on documents and document
+  classes. aiorethink can also assist with Python object creation on just about
+  any other changefeed.
+
+Planned features:
+
+* maybe explicit relations between document classes (think "has_many" etc.)
+* maybe schema migrations
 
 
 Philosophy
@@ -75,33 +118,8 @@ aiorethink aims to do the following two things very well:
 Other than that, aiorethink tries not to hide RethinkDB under a too thick
 abstraction layer. RethinkDB's excellent Python driver, and certainly its
 awesome query language, are never far removed and always easy to access. Custom
-queries on document objects, and getting document objects out of vanilla
-rethinkdb queries, including changefeeds, should be easy.
-
-
-Features
---------
-
-The following features are either fully or partially implemented:
-
-* optional schema: declare fields and get serialization and validation magic
-  much like you know it from other ODMs / ORMs. Or don't declare fields and
-  "just use them". Or use a mix of declared and undeclared fields.
-* ``dict`` interface that works the same for both declared and undeclared
-  fields.
-* schema for complex fields such as lists, dicts, or "sub-documents"
-* all I/O is is asynchronous, done with ``async def`` / ``await`` style
-  coroutines.
-* lazy-loading and caching (i.e. "awaitable" fields), for example references
-  to other documents.
-* real-time changefeeds using asynchronous iterators (``async for``) on
-  documents and document classes. aiorethink can in addition assist with Python
-  object creation on just about any other changefeed.
-
-Planned features:
-
-* maybe explicit relations between document classes (think "has_many" etc.)
-* maybe schema migrations
+queries on document objects should be easy. Getting document objects out of
+vanilla rethinkdb queries, including changefeeds, should also be easy.
 
 
 Status
