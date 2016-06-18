@@ -7,6 +7,21 @@ import aiorethink
 from aiorethink.registry import registry
 
 
+# WORKAROUND for https://github.com/pytest-dev/pytest-asyncio/issues/30
+@pytest.yield_fixture
+def event_loop():
+    """Create an instance of the default event loop for each test case."""
+    policy = asyncio.get_event_loop_policy()
+    res = policy.new_event_loop()
+    asyncio.set_event_loop(res)
+    res._close = res.close
+    res.close = lambda: None
+
+    yield res
+
+    res._close()
+
+
 @pytest.fixture(scope = "session")
 def _db_config():
     # configure DB exactly once
