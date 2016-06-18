@@ -34,30 +34,36 @@ Simple example
     import aiorethink as ar
 
     class Hero(ar.Document):
-        name = ar.Field(indexed = True)
+        name = ar.Field(ar.StringValueType(), indexed = True)
 
-That's all you need to start out with your own documents.
+That's all you need to start out with your own documents. More than that,
+actually: declaring and "typing" fields is entirely optional.
 
 Obviously, you need a RethinkDB instance running, and you need a database
 including the tables for your Document classes. aiorethink can't help you with
 the RethinkDB instance, but the DB setup can be done like so (assuming a
 RethinkDB instance runs on localhost)::
 
-    aiorethink.configure_db_connection(db = "my_db")
-    await aiorethink.init_app_db()
+    ar.configure_db_connection(db = "my_db")
+    await ar.init_app_db()
 
 Let's make a document::
 
     spiderman = Hero(name = "Spiderma")
 
     # declared fields can be accessed by attribute or dict interface
-    spiderman.name = "Spierman" # oops, typo
-    spiderman["name"] = "Spiderman"
+    spiderman.name = "Spierman"
+    spiderman["name"] = "Spiderman" # third time's the charm
 
-    # with the dict interface, we can use fields we don't declare
+    # with the dict interface, we can make and access undeclared fields
     spiderman["nickname"] = "Spidey"
 
-    await spiderman.save()
+Validate and save to DB::
+
+    try:
+        await spiderman.save() # calls spiderman.validate()
+    except ar.ValidationError as e:
+        print("validation failed, doc not saved: {}".format(e))
 
     # if we don't declare a primary key field, RethinkDB makes us an 'id' field
     doc_id = spiderman.id
@@ -87,8 +93,8 @@ The following features are either fully or partially implemented:
 
 * optional schema: declare fields in Document classes and get serialization and
   validation magic much like you know it from other ODMs / ORMs. Or don't
-  declare fields and "just use them" using the dictionary interface. Or use a
-  mix of declared and undeclared fields.
+  declare fields and just use them with the dictionary interface. Or use a mix
+  of declared and undeclared fields.
 * schema for complex fields such as lists, dicts, or even "sub-documents" with
   named and typed fields just like documents.
 * ``dict`` interface that works for both declared and undeclared fields.
