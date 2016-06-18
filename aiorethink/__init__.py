@@ -1,7 +1,7 @@
 import rethinkdb
 rethinkdb.set_loop_type("asyncio")
 
-__versioninfo__ = (0,1)
+__version__ = "0.2.0"
 
 # constants
 ALL             = 0
