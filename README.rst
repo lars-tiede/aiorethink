@@ -63,32 +63,43 @@ Let's make a Document::
     print(spiderman.id)
 
 
-Features and philosophy
------------------------
+Philosophy
+----------
 
-The following features are either fully or partly implemented already:
+aiorethink aims to do the following two things very well:
+
+* make translations between database documents and Python objects easy and
+  convenient
+* help with schema and validation
+
+Other than that, aiorethink tries not to hide RethinkDB under a too thick
+abstraction layer. RethinkDB's excellent Python driver, and certainly its
+awesome query language, are never far removed and always easy to access. Custom
+queries on document objects, and getting document objects out of vanilla
+rethinkdb queries, including changefeeds, should be easy.
+
+
+Features
+--------
+
+The following features are either fully or partially implemented:
 
 * optional schema: declare fields and get serialization and validation magic
   much like you know it from other ODMs / ORMs. Or don't declare fields and
   "just use them". Or use a mix of declared and undeclared fields.
 * ``dict`` interface that works the same for both declared and undeclared
   fields.
+* schema for complex fields such as lists, dicts, or "sub-documents"
 * all I/O is is asynchronous, done with ``async def`` / ``await`` style
   coroutines.
-* lazy-loading and caching (i.e. "awaitable" fields)
+* lazy-loading and caching (i.e. "awaitable" fields), for example references
+  to other documents.
 * real-time changefeeds using asynchronous iterators (``async for``) on
-  documents and classes (tables). aiorethink can in addition assist with Python
+  documents and document classes. aiorethink can in addition assist with Python
   object creation on just about any other changefeed.
 
-aiorethink doesn't attempt to hide RethinkDB under a new abstraction layer.
-RethinkDB's excellent Python driver, and certainly its awesome query language,
-are never far removed and always easy to access. What aiorethink aims to do
-well are two things:
-* make translations between serialized database documents and Python objects
-  easy and convenient
-* help with schema and validation
-
 Planned features:
+
 * maybe explicit relations between document classes (think "has_many" etc.)
 * maybe schema migrations
 
