@@ -21,12 +21,80 @@ aiorethink
 aiorethink is a fairly comprehensive but easy-to-use asyncio-enabled Object Document Mapper
 for `RethinkDB <https://www.rethinkdb.com/>`_. It is currently in development.
 
-Documentation: http://aiorethink.readthedocs.org
+Documentation: http://aiorethink.readthedocs.org (very early stages)
 
 Source: https://github.com/lars-tiede/aiorethink
+
+
+Simple example
+--------------
+
+::
+
+    import aiorethink as ar
+
+    class Hero(ar.Document):
+        name = ar.Field(indexed = True)
+
+That's all you need to start out with your own documents.
+
+Obviously, you need a RethinkDB instance running, and you need a database and
+the tables for your Document classes. aiorethink can't help you with the
+former, but the latter can be achieved like so (assuming a RethinkDB runs on
+localhost)::
+
+    aiorethink.configure_db_connection(db = "my_db")
+    await aiorethink.init_app_db()
+
+Let's make a Document::
+
+    spiderman = Hero(name = "Spiderma")
+
+    # declared fields can be accessed by attribute or dict interface
+    spiderman.name = "Spierman" # oops, typo
+    spiderman["name"] = "Spiderman"
+
+    # with the dict interface, we can use fields we don't declare
+    spiderman["nickname"] = "Spidey"
+
+    await spiderman.save()
+
+    # if we don't declare a primary key field, RethinkDB makes an 'id' field
+    print(spiderman.id)
+
+
+Features and philosophy
+-----------------------
+
+The following features are either fully or partly implemented already:
+
+* optional schema: declare fields and get serialization and validation magic
+  much like you know it from other ODMs / ORMs. Or don't declare fields and
+  "just use them". Or use a mix of declared and undeclared fields.
+* ``dict`` interface that works the same for both declared and undeclared
+  fields.
+* all I/O is is asynchronous, done with ``async def`` / ``await`` style
+  coroutines.
+* lazy-loading and caching (i.e. "awaitable" fields)
+* real-time changefeeds using asynchronous iterators (``async for``) on
+  documents and classes (tables). aiorethink can in addition assist with Python
+  object creation on just about any other changefeed.
+
+aiorethink doesn't attempt to hide RethinkDB under a new abstraction layer.
+RethinkDB's excellent Python driver, and certainly its awesome query language,
+are never far removed and always easy to access. What aiorethink aims to do
+well are two things:
+* make translations between serialized database documents and Python objects
+  easy and convenient
+* help with schema and validation
+
+Planned features:
+* maybe explicit relations between document classes (think "has_many" etc.)
+* maybe schema migrations
 
 
 Status
 ------
 
-In development. The API is not complete and far from stable yet.
+aiorethink is in development. The API is not complete and not stable yet,
+although the most important features are present now.
