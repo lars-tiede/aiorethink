@@ -31,6 +31,8 @@ def _db_config():
 
 @pytest.yield_fixture
 def db_conn(_db_config, event_loop):
+    """Fixture for aiorethink.db_conn
+    """
     yield aiorethink.db_conn
 
     event_loop.run_until_complete(
@@ -40,12 +42,16 @@ def db_conn(_db_config, event_loop):
 
 @pytest.yield_fixture
 def aiorethink_session(db_conn):
+    """Fixture for DB connection and aiorethink's registry
+    """
     yield None
     registry.clear()
 
 
 @pytest.yield_fixture
 def aiorethink_db_session(db_conn, event_loop):
+    """Fixture for DB connection, 'testing' DB, and aiorethink's registry.
+    """
     arun = event_loop.run_until_complete
     cn = arun(db_conn.get())
 
