@@ -382,6 +382,47 @@ async def test_from_query(EmptyDoc, db_conn, aiorethink_db_session):
 
 
 ###############################################################################
+# Subclassing
+###############################################################################
+
+@pytest.mark.asyncio
+async def test_subclass_trivial(aiorethink_db_session, db_conn):
+    class GeneralDoc(ar.Document):
+        pass
+    class SpecializedDoc(GeneralDoc):
+        pass
+
+    await GeneralDoc._create_table()
+    assert await GeneralDoc.table_exists()
+    assert not await SpecializedDoc.table_exists()
+    await SpecializedDoc._create_table()
+    assert await SpecializedDoc.table_exists()
+
+    cn = await db_conn
+    assert GeneralDoc._tablename in await r.table_list().run(cn)
+    assert SpecializedDoc._tablename in await r.table_list().run(cn)
+    assert GeneralDoc._tablename != SpecializedDoc._tablename
+
+
+@pytest.mark.asyncio
+async def test_subclass_field_inheritance_sanity(aiorethink_db_session, db_conn):
+    class GeneralDoc(ar.Document):
+        f1 = ar.Field()
+    class SpecializedDoc(GeneralDoc):
+        f2 = ar.Field()
+
+    dg = GeneralDoc()
+    ds = SpecializedDoc()
+
+    assert len(dg) == 2
+    assert len(ds) == 3
+    assert "f2" in ds
+    assert "f2" not in dg
+    assert "f1" in dg
+    assert "f1" in ds
+
+
+###############################################################################
 # changefeeds
 ###############################################################################
 
