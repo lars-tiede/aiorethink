@@ -17,3 +17,6 @@ rethinkdb_data
 build
 dist
 *.egg-info
+*.vim
+.rsync-filter
+build_and_publish.sh
