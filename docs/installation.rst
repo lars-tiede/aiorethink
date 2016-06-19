@@ -19,8 +19,8 @@ Obviously, you also need access to an instance of `RethinkDB
 <https://www.rethinkdb.com>`_.
 
 
-Alterntive 1: install from PyPI
--------------------------------
+Alternative 1: install from PyPI
+--------------------------------
 
 ::
 
