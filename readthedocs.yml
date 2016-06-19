@@ -1,0 +1,8 @@
+---
+python:
+    version: 3
+
+# use conda environment to get Python 3.5 - the only way to get it as of 2016-06
+# check http://stackoverflow.com/a/36144269/5856064
+conda:
+    file: docs/conda_env.yml

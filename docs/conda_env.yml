@@ -1,0 +1,18 @@
+---
+# check http://stackoverflow.com/a/36144269/5856064
+
+name: py35
+dependencies:
+- openssl
+- pip
+- python=3.5.1=0
+- readline
+- setuptools
+- sqlite
+- tk
+- wheel
+- xz
+- zlib
+- pip:
+  - rethinkdb
+  - inflection
