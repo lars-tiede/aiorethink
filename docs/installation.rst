@@ -19,16 +19,16 @@ Obviously, you also need access to an instance of `RethinkDB
 <https://www.rethinkdb.com>`_.
 
 
-Install from PyPI
------------------
+Alterntive 1: install from PyPI
+-------------------------------
 
 ::
 
     pip3 install aiorethink
 
 
-Install from source
--------------------
+Alternative 2: install from source
+----------------------------------
 
 Running or installing right from `source
 <https://github.com/lars-tiede/aiorethink>`_ gives you the possibility to run
@@ -55,8 +55,8 @@ You can use any version of aiorethink this way, by specifying any git branch,
 tag, or commit instead of ``master``.
 
 
-Hack and build from source
---------------------------
+Alternative 3: hack and build from source
+-----------------------------------------
 
 If you don't want the cloned and hackable repository to live in
 ``py-env/src/aiorethink``, you can also clone the repository yourself and make
