@@ -27,8 +27,8 @@ class _MetaFieldContainer(abc.ABCMeta):
 
 class FieldContainer(collections.abc.MutableMapping,
         metaclass = _MetaFieldContainer):
-    """A FieldContainer stores named fields. It is the base for ``Document``
-    and ``SubDocument``.
+    """A FieldContainer stores named fields. It is the base for
+    :class:`aiorethink.Document`, but can also be used directly.
 
     There are declared fields (i.e. instances of Field), and there are
     undeclared fields. Both can be accessed using a dict-like interface. Only
